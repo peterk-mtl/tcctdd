@@ -1,602 +1,645 @@
-# TCCTDD — Cahier des charges fonctionnel
+# 02 — Cahier des charges fonctionnel et technique
 
-**Version :** 1.0  
-**Statut :** Document de référence  
-**Dépendance :** `01-VISION-PRODUIT.md`
+## 1. Objet du document
 
-## 1. Principes fonctionnels généraux
+Ce document décrit les exigences fonctionnelles et techniques du MVP de TCCTDD.
 
-### 1.1. Propriété des données
+Il complète `01-VISION-PRODUIT.md` en détaillant les fonctionnalités attendues, leurs règles de gestion, les contraintes d'utilisation et les critères d'acceptation.
 
-Toutes les données personnelles sont rattachées à un utilisateur.
+Il constitue une référence pour la conception, le développement et la validation du produit.
 
-Chaque opération doit vérifier les droits d'accès côté serveur. Il ne suffit jamais de masquer une fonctionnalité dans l'interface.
+En cas de contradiction, les décisions explicites validées dans les documents de conception spécialisés prévalent sur les descriptions générales de ce cahier des charges.
 
-### 1.2. Fonctionnement sans IA
+## 2. Périmètre général
 
-Les fonctionnalités métier indépendantes de l'IA doivent rester disponibles lorsque le moteur IA est arrêté ou indisponible.
+### 2.1 Utilisation
 
-Une panne IA ne doit pas empêcher :
-- la consultation du journal ;
-- la consultation des exercices ;
-- la sauvegarde des réponses ;
-- la consultation des parcours ;
-- la gestion des objectifs ;
-- l'accès aux préférences ;
-- l'export des données.
+- Un utilisateur actif initialement.
+- Authentification privée obligatoire.
+- Aucune inscription publique.
+- Données cloisonnées par utilisateur.
+- Interface responsive.
+- Langue initiale : français.
+- Architecture compatible avec une future internationalisation.
 
-### 1.3. Traçabilité
+### 2.2 Environnement technique
 
-Les opérations importantes doivent pouvoir être retracées techniquement sans conserver de contenu personnel dans les journaux techniques.
+- Application web locale.
+- Docker Compose.
+- Backend Laravel.
+- Service Python indépendant pour les traitements IA et documentaires.
+- PostgreSQL avec pgvector.
+- Frontend Vue 3, TypeScript, Inertia et Tailwind.
+- Administration via Filament.
+- Inférence locale via Ollama.
 
-Les versions des exercices, documents, prompts, modèles et configurations IA doivent être identifiables.
+### 2.3 Contraintes matérielles
 
-### 1.4. Sauvegarde progressive
+L'application doit pouvoir fonctionner sur une machine sans GPU dédié. La machine de référence est de type ThinkPad T480 :
 
-Les formulaires importants doivent sauvegarder leur progression afin d'éviter la perte de données en cas de fermeture ou d'interruption.
+- Processeur Intel Core i5-8350U (4 cœurs, 8 threads).
+- 32 Go de RAM.
+- SSD de 256 Go.
 
----
+Les contraintes principales sont le temps de calcul CPU et l'espace disque. Le choix des modèles sera fondé sur un benchmark réalisé sur cette machine (phase 1b), l'inférence restant locale via Ollama.
 
-## 2. Authentification et préférences
+Les traitements IA doivent être contrôlés afin d'éviter une saturation des ressources :
 
-### 2.1. Authentification
+- Une seule génération à la fois.
+- Limitation des traitements simultanés.
+- Gestion du chargement et du déchargement des modèles.
+- Priorisation des opérations : une génération de conversation est toujours interactive et n'est jamais préemptée ; un traitement IA de fond peut être préempté au profit d'une conversation, puis relancé.
+- Possibilité de différer les traitements lourds.
+- Disponibilité des fonctionnalités non IA lorsque le moteur IA est indisponible.
 
-L'application utilise le système d'authentification natif de Laravel.
+## 3. Authentification et gestion des accès
 
-Fonctionnalités :
-- connexion par identifiant et mot de passe ;
-- déconnexion ;
-- gestion de session ;
-- réinitialisation du mot de passe via les mécanismes Laravel ;
-- limitation des tentatives de connexion ;
-- protection contre les accès non autorisés.
+### Exigences
 
-Aucun fournisseur d'identité externe n'est obligatoire.
+- Authentification par identifiant et mot de passe.
+- Sessions sécurisées.
+- Protection contre les tentatives répétées de connexion.
+- Déconnexion explicite.
+- Verrouillage automatique après une période d'inactivité configurable, avec 15 minutes par défaut.
+- Après inactivité, affichage d'un écran de verrouillage et nouvelle saisie du mot de passe, sans perte de la session en cours.
+- Contrôle du verrouillage côté serveur : il ne repose pas uniquement sur du JavaScript dans le navigateur.
+- Réinitialisation du mot de passe via les mécanismes Laravel natifs.
+- Contrôle d'accès côté serveur à chaque opération.
 
-### 2.2. Verrouillage automatique
+### Règles
 
-Après 15 minutes d'inactivité, l'interface doit être verrouillée.
+- Aucune donnée utilisateur ne doit être accessible sans authentification.
+- Toute ressource métier doit être vérifiée par rapport à son propriétaire.
+- Les identifiants UUID ne constituent pas un mécanisme d'autorisation.
+- Les opérations administratives sont réservées au rôle `ADMIN`.
 
-Le verrouillage :
-- ne détruit pas la session ;
-- ne supprime aucune donnée ;
-- demande une nouvelle authentification ;
-- doit être appliqué côté serveur, pas uniquement par un minuteur JavaScript.
+### Rôles
 
-La durée doit être configurable.
+Deux rôles sont prévus : `ADMIN` et `USER`. Les autorisations sont contrôlées par les Policies Laravel, sans paquet de gestion des permissions.
 
-### 2.3. Préférences générales
+Le rôle `ADMIN` est seul autorisé à administrer les contenus et à valider les contenus éditoriaux. Dans le MVP personnel, le compte initial peut disposer du rôle `ADMIN`.
+
+### Préférences générales
 
 L'utilisateur peut configurer :
-- langue ;
-- fuseau horaire ;
-- préférences d'interface ;
-- préférences générales de confidentialité ;
-- préférences de comportement du compagnon ;
-- politique d'accès IA par défaut au journal ;
-- rappels et notifications facultatifs.
 
-Les préférences déduites par le compagnon doivent être proposées ou consultables et corrigibles par l'utilisateur.
+- La langue.
+- Le fuseau horaire.
+- Le pays utilisé pour les ressources d'urgence (France par défaut).
+- Les préférences d'interface.
+- Les préférences générales de confidentialité.
+- Les préférences de comportement du compagnon.
+- La politique d'accès IA par défaut au journal.
+- Les rappels et notifications facultatifs.
 
----
+Les préférences déduites par le compagnon doivent être proposées à l'utilisateur, ou rester consultables et corrigibles par lui.
 
-## 3. Compagnon conversationnel
+## 4. Tableau de bord
 
-### 3.1. Gestion des conversations
+Le tableau de bord constitue le point d'entrée après authentification.
 
-L'utilisateur peut :
-- créer une conversation ;
-- consulter la liste de ses conversations ;
-- ouvrir une conversation ;
-- renommer une conversation ;
-- archiver une conversation ;
-- restaurer une conversation archivée ;
-- supprimer une conversation.
+Il doit présenter de manière synthétique :
 
-Une conversation peut être générale ou thématique.
+- Un accès à la conversation avec le compagnon.
+- Les exercices en cours.
+- Les parcours actifs.
+- Les derniers éléments du journal.
+- Les objectifs personnels.
+- Des indicateurs simples d'activité et de progression.
 
-L'historique doit conserver l'ordre exact des messages.
+L'interface ne doit pas transformer la progression en obligation ou générer de culpabilité en cas d'inactivité.
 
-### 3.2. Gestion des messages
+Les suggestions éventuelles doivent rester discrètes et pertinentes.
 
-L'utilisateur peut envoyer un message texte et consulter les réponses du compagnon.
+## 5. Compagnon conversationnel
 
-Règles :
-- un message utilisateur est conservé dès son envoi ;
-- un message envoyé est immuable ;
-- une correction se fait par l'envoi d'un nouveau message ;
-- une réponse assistant peut être régénérée ;
-- les nouvelles tentatives sont conservées techniquement ;
-- une seule génération active est autorisée par message assistant.
+### 5.1 Conversations
 
-### 3.3. Génération progressive
+L'utilisateur doit pouvoir :
 
-La réponse doit apparaître progressivement pendant sa génération.
+- Créer une conversation.
+- Consulter ses conversations précédentes.
+- Renommer une conversation.
+- Archiver une conversation.
+- Restaurer une conversation archivée.
+- Reprendre une conversation active.
+- Supprimer une conversation selon la politique de suppression définie.
 
-L'utilisateur peut explicitement interrompre une génération.
+Les conversations peuvent être générales ou thématiques.
 
-En cas d'interruption :
-- le texte partiel est conservé temporairement dans la tentative ;
-- il est clairement identifié comme incomplet ;
-- il n'est pas traité comme une réponse terminée ;
-- il n'est pas automatiquement réinjecté dans le contexte d'une nouvelle génération ;
-- il est supprimé après une durée maximale de sept jours.
+À défaut de titre saisi, le titre est dérivé des premiers mots du premier message, sans appel au modèle. Il reste modifiable.
 
-Une nouvelle tentative crée une nouvelle tentative de génération, sans écraser l'historique précédent.
+### 5.2 Messages
 
-### 3.4. Gestion des erreurs
+L'utilisateur doit pouvoir envoyer des messages textuels et consulter les réponses du compagnon.
 
-Si le modèle configuré est indisponible :
-- l'utilisateur reçoit un message compréhensible ;
-- l'application conserve les messages déjà envoyés ;
-- les fonctions indépendantes de l'IA restent disponibles ;
-- aucun modèle de remplacement n'est activé automatiquement.
+Les réponses doivent pouvoir être affichées progressivement lorsque le modèle le permet.
 
-### 3.5. Comportement conversationnel
+Chaque message utilisateur est conservé après envoi. Il n'est pas modifiable : une correction passe par un nouveau message.
+
+Les messages assistant sont associés à une tentative de génération. Une régénération crée une nouvelle tentative sans écraser l'historique technique des précédentes.
+
+### 5.3 Génération
+
+Le système doit :
+
+- Construire le contexte utile à partir de l'historique et des mémoires autorisées.
+- Appliquer les préférences et règles de gouvernance.
+- Déterminer si une recherche documentaire est pertinente, selon le mode de récupération documentaire configuré.
+- Construire le prompt complet côté Laravel, puis transmettre la requête au service Python.
+- Afficher progressivement la réponse.
+- Enregistrer le résultat final.
+- Gérer les erreurs, interruptions et annulations.
+
+Modes de récupération documentaire :
+
+- `never` : aucune recherche documentaire.
+- `always` : recherche documentaire systématique.
+- `auto` : Laravel décide selon des règles déterministes, sans appel supplémentaire à un modèle de langage.
+
+Laravel construit le prompt (historique, mémoires autorisées, extraits documentaires, release de configuration active). Le service Python ne compose pas le prompt métier.
+
+Une génération interrompue ne doit jamais être présentée comme une réponse terminée.
+
+Le texte partiel est conservé uniquement dans le cadre technique prévu, avec une durée de rétention limitée.
+
+### 5.4 Posture conversationnelle
 
 Le compagnon doit :
-- écouter avant de proposer une solution ;
-- adapter ses réponses au contexte ;
-- éviter de transformer chaque échange en exercice ;
-- pouvoir simplement accompagner une réflexion ;
-- proposer des exercices lorsqu'ils sont pertinents ;
-- faire des liens avec des éléments antérieurs lorsqu'ils sont utiles ;
-- reconnaître ses incertitudes ;
-- ne pas inventer d'interprétation psychologique.
 
-Il peut prendre une initiative discrète lorsqu'une évolution ou une répétition semble pertinente, sans interrompre systématiquement l'utilisateur.
+- Être bienveillant, empathique et non jugeant.
+- Éviter les réponses infantilisantes ou artificiellement positives.
+- Respecter le rythme de l'utilisateur.
+- Ne pas imposer systématiquement des exercices.
+- Distinguer observation, hypothèse et fait déclaré.
+- Reconnaître ses limites et son incertitude.
+- Rester cohérent avec le cadre TCC.
 
----
+## 6. Mémoire personnelle
 
-## 4. Mémoire personnelle
+### Fonctionnalités
 
-### 4.1. Création
+Le système doit pouvoir proposer et enregistrer des informations utiles à la continuité de l'accompagnement.
 
-La mémoire est composée d'éléments atomiques catégorisés.
+Les mémoires peuvent concerner :
 
-Catégories initiales :
-- contexte personnel ;
-- difficultés récurrentes ;
-- déclencheurs ;
-- schémas de pensée ;
-- schémas émotionnels ;
-- objectifs ;
-- stratégies utiles ;
-- ressources ;
-- progrès.
+- Le contexte personnel.
+- Les difficultés récurrentes.
+- Les déclencheurs.
+- Les pensées et schémas identifiés.
+- Les réactions émotionnelles.
+- Les objectifs.
+- Les stratégies utiles.
+- Les ressources.
+- Les progrès.
 
-Les faits explicitement déclarés peuvent être enregistrés automatiquement comme informations déclarées.
+### Règles de gestion
 
-Les interprétations produites par l'IA doivent être proposées à l'utilisateur avant de devenir des mémoires actives.
+- Une information saisie directement par l'utilisateur dans sa mémoire est enregistrée comme active et déclarée (`ACTIVE` + `DECLARED`).
+- Une information extraite d'une conversation par l'IA est toujours créée comme proposition (`PROPOSED`), y compris lorsqu'elle reprend une déclaration explicite de l'utilisateur. Elle ne devient active qu'après validation par l'utilisateur.
+- Une interprétation de l'IA reste une hypothèse tant qu'elle n'est pas validée.
+- Une mémoire doit conserver sa provenance.
+- Les contradictions potentielles doivent être signalées sans suppression automatique.
+- Les consolidations qui modifient le sens des informations nécessitent une validation.
+- L'utilisateur peut consulter, corriger, rejeter ou archiver les mémoires.
+- Une mémoire ne doit pas être créée uniquement à partir d'une interprétation non vérifiée.
 
-### 4.2. Validation et modification
+## 7. Catalogue d'exercices TCC
 
-L'utilisateur peut :
-- consulter les mémoires ;
-- accepter une proposition ;
-- refuser une proposition ;
-- corriger une information ;
-- consulter son historique ;
-- archiver une mémoire ;
-- restaurer une mémoire lorsque cela est permis.
+### Fonctionnalités
 
-Chaque mémoire conserve sa provenance.
+Le système doit proposer un catalogue administrable d'exercices.
 
-### 4.3. Contradictions
+L'utilisateur doit pouvoir :
 
-Lorsque deux mémoires semblent contradictoires :
-- elles sont conservées ;
-- le système signale le conflit potentiel ;
-- le compagnon peut demander une clarification ;
-- l'utilisateur peut reconnaître, résoudre ou écarter le conflit.
+- Parcourir les exercices.
+- Consulter leur description et leurs objectifs.
+- Démarrer une session.
+- Reprendre une session en cours.
+- Enregistrer ses réponses.
+- Terminer ou abandonner une session.
+- Consulter les sessions précédentes.
 
-Le système ne choisit jamais automatiquement quelle information est vraie.
+### Exigences de contenu
 
-### 4.4. Consolidation
+Chaque exercice doit comporter une structure commune et des blocs de contenu modulaires.
 
-L'IA peut proposer :
-- une fusion de mémoires similaires ;
-- une révision d'une mémoire ;
-- l'ajout d'une nouvelle source à une mémoire existante.
+Les questions peuvent être conditionnelles selon les réponses précédentes.
 
-L'ajout d'une source sans modification de sens peut être automatique lorsque sa fiabilité est suffisante.
+Les conditions du MVP doivent rester simples et déclaratives.
 
-Une fusion ou une modification de sens nécessite une validation utilisateur.
+Les exercices publiés doivent être versionnés et conserver leur historique éditorial.
 
-Les anciennes mémoires restent conservées dans l'historique et peuvent être marquées comme remplacées.
+Une session utilise une version précise de l'exercice. Une modification ultérieure du contenu ne modifie pas les sessions déjà commencées.
 
----
+### Administration
 
-## 5. Catalogue d'exercices TCC
+L'administration doit permettre :
 
-### 5.1. Consultation
+- La création et la modification des exercices.
+- La gestion des versions.
+- La classification par catégories et tags.
+- La gestion des références bibliographiques.
+- La validation éditoriale.
+- La publication et l'archivage.
 
-L'utilisateur peut :
-- consulter le catalogue ;
-- rechercher un exercice ;
-- filtrer par catégorie ou étiquette ;
-- consulter une fiche détaillée ;
-- consulter les précautions et limites ;
-- ajouter ou retirer un favori.
+La validation éditoriale est réservée au rôle `ADMIN`. L'auteur et le validateur de chaque version sont tracés. Par défaut, le MVP personnel fonctionne en mode auteur-validateur unique ; une séparation stricte entre auteur et validateur peut être activée par configuration.
 
-### 5.2. Structure des exercices
+La validation éditoriale ne doit pas être présentée comme une certification scientifique ou médicale.
 
-Chaque exercice comprend :
-- une introduction ;
-- des objectifs ;
-- des instructions ;
-- un ensemble de blocs de contenu ordonnés ;
-- une conclusion ;
-- des précautions ;
-- une justification pédagogique et méthodologique ;
-- un niveau de preuve ou de justification ;
-- des références bibliographiques lorsque pertinentes.
+## 8. Journal personnel
 
-Les blocs peuvent contenir des explications, des questions, des exemples, des tableaux ou des consignes.
+### Fonctionnalités
 
-Certains blocs peuvent dépendre d'une réponse précédente.
+L'utilisateur doit pouvoir :
 
-Les conditions restent simples et déclaratives dans le MVP.
+- Créer une entrée.
+- Consulter ses entrées.
+- Modifier une entrée.
+- Consulter les versions précédentes.
+- Archiver une entrée.
+- Restaurer une entrée archivée.
+- Supprimer une entrée.
 
-### 5.3. Réalisation
+### Confidentialité
 
-L'utilisateur peut :
-- démarrer un exercice ;
-- répondre progressivement ;
-- reprendre une réalisation en cours ;
-- terminer un exercice ;
-- abandonner une réalisation ;
-- consulter les réalisations précédentes.
+Chaque entrée dispose d'une règle d'utilisation par l'IA :
 
-Chaque réalisation référence exactement la version de l'exercice utilisée.
-
-Les réponses sont sauvegardées automatiquement, avec temporisation adaptée pour les champs textuels.
-
-Les réponses restent modifiables tant que la réalisation est en cours.
-
-Une réalisation terminée est immuable. Une correction nécessite une nouvelle réalisation.
-
-### 5.4. Questions conditionnelles
-
-Les blocs conditionnels ne s'affichent que lorsque leur condition est satisfaite.
-
-Les réponses des blocs temporairement masqués sont conservées, mais ne sont pas transmises à l'IA tant que les blocs restent masqués.
-
-Les conditions ne doivent pas permettre de créer des dépendances circulaires.
-
----
-
-## 6. Parcours d'accompagnement
-
-### 6.1. Parcours éditoriaux
-
-L'utilisateur peut consulter les parcours publiés.
-
-Chaque parcours comprend des étapes ordonnées pouvant référencer :
-- un exercice ;
-- une ressource ;
-- une réflexion ;
-- un bilan intermédiaire.
-
-Les prérequis déterminent les étapes disponibles.
-
-Une nouvelle version d'un exercice ne modifie pas rétroactivement un parcours déjà publié.
-
-### 6.2. Parcours personnels
-
-L'utilisateur peut :
-- créer un parcours manuellement ;
-- accepter un parcours proposé par l'IA ;
-- créer un parcours avec assistance IA ;
-- modifier ses étapes ;
-- activer ou mettre en pause le parcours ;
-- terminer ou archiver le parcours ;
-- suivre sa progression.
-
-Un parcours proposé par l'IA reste à l'état de brouillon tant qu'il n'a pas été accepté.
-
-### 6.3. Prérequis
-
-Les dépendances entre étapes doivent former un graphe sans cycle.
-
-Les états disponibles ou verrouillés sont calculés à partir des prérequis.
-
-Les étapes facultatives peuvent être ignorées.
-
----
-
-## 7. Journal personnel
-
-### 7.1. Gestion des entrées
-
-L'utilisateur peut :
-- créer une entrée ;
-- modifier son contenu ;
-- consulter son historique ;
-- archiver une entrée ;
-- restaurer une entrée archivée ;
-- supprimer une entrée.
-
-Les versions précédentes restent disponibles selon la politique de conservation.
-
-### 7.2. Accès de l'IA
-
-Trois politiques sont disponibles :
-- `DEFAULT` : hérite de la préférence générale ;
-- `ALLOWED` : autorise explicitement l'accès ;
-- `DENIED` : interdit l'accès.
+- Utilisation autorisée.
+- Utilisation interdite.
+- Utilisation selon la préférence générale de l'utilisateur.
 
 La préférence générale est désactivée par défaut.
 
-Toute consultation par l'IA doit vérifier les droits au moment de l'accès.
+Les droits sont vérifiés au moment de chaque accès par l'IA. Une entrée interdite ne doit jamais être récupérée par la recherche documentaire ni injectée dans un contexte conversationnel.
 
-Une entrée interdite ne doit jamais être récupérée par le RAG ni injectée dans un contexte conversationnel.
+La consultation d'une entrée par l'utilisateur ne vaut pas autorisation de l'utiliser dans une extraction de mémoire.
 
-L'autorisation de consulter ne vaut pas autorisation d'extraire une mémoire durable.
+Les versions du journal sont créées lors des sauvegardes effectives, et non à chaque frappe.
 
----
+## 9. Parcours personnalisés
 
-## 8. Objectifs et progression
+### Fonctionnalités
 
-### 8.1. Objectifs personnels
+L'utilisateur doit pouvoir :
 
-L'utilisateur peut :
-- créer un objectif ;
-- le modifier ;
-- le mettre en pause ;
-- le marquer comme atteint ;
-- l'abandonner ;
-- l'associer à un ou plusieurs parcours.
+- Créer un parcours.
+- Ajouter des étapes.
+- Réorganiser les étapes.
+- Mettre un parcours en pause.
+- Reprendre un parcours.
+- Terminer ou archiver un parcours.
 
-Un objectif peut exister sans parcours associé.
+Les étapes peuvent être des exercices, des ressources, des réflexions ou des bilans intermédiaires.
 
-### 8.2. Bilans de progression
+L'IA peut proposer un parcours, mais celui-ci reste un brouillon jusqu'à validation de l'utilisateur.
 
-L'utilisateur peut demander un bilan sur une période et un périmètre donnés.
+Les dépendances entre étapes doivent être explicites et ne pas permettre de cycles.
 
-Le système :
-1. identifie les sources autorisées ;
-2. enregistre leurs références et versions ;
-3. génère un brouillon ;
-4. présente le résultat à l'utilisateur ;
-5. attend sa validation avant conservation définitive.
+## 10. Objectifs personnels
 
-Les entrées de journal interdites sont exclues.
+L'utilisateur doit pouvoir :
 
-Les conversations ne sont pas incluses automatiquement.
+- Créer un objectif.
+- Modifier sa description.
+- Le mettre en pause.
+- Le marquer comme atteint.
+- L'abandonner.
+- Le relier à un ou plusieurs parcours.
 
-Les hypothèses doivent être identifiées comme telles.
+Un objectif peut exister indépendamment d'un parcours.
+
+Aucun objectif ne doit être imposé automatiquement par le compagnon.
+
+## 11. Bilans de progression
+
+Les bilans sont déclenchés à la demande de l'utilisateur.
+
+Ils peuvent exploiter les sources autorisées :
+
+- Exercices réalisés.
+- Objectifs personnels.
+- Mémoires validées ou déclarées.
+- Conversations selon le périmètre explicitement autorisé.
+- Journal uniquement si son utilisation est autorisée.
+
+Le bilan doit :
+
+- Présenter les éléments observés.
+- Identifier les évolutions possibles.
+- Distinguer faits et hypothèses.
+- Signaler les informations manquantes.
+- Éviter les scores psychologiques globaux.
+- Conserver les références aux données utilisées.
+
+Un bilan généré est un brouillon. L'utilisateur peut le modifier, chaque modification étant enregistrée comme révision, puis le valider ou le supprimer. Un bilan validé est immuable. La release de configuration IA ayant servi à la génération est tracée.
+
+La génération d'un bilan est un traitement IA de fond : elle peut être préemptée au profit d'une conversation, puis relancée automatiquement.
 
 L'absence de données ne doit jamais être interprétée comme une absence de progrès.
 
-Aucun score psychologique global n'est calculé.
+## 12. Base documentaire et recherche RAG
 
----
+### Fonctionnalités
 
-## 9. Base documentaire et RAG
+L'administrateur doit pouvoir :
 
-### 9.1. Importation
+- Importer un document.
+- Consulter ses métadonnées.
+- Gérer ses versions.
+- Valider son contenu.
+- Activer ou désactiver son utilisation par l'IA.
+- Consulter l'état de son indexation.
+- Archiver un document.
 
-Seuls les administrateurs peuvent importer des documents.
+### Traitement documentaire
 
-Chaque document suit un cycle éditorial :
-`DRAFT → UNDER_REVIEW → APPROVED → ARCHIVED`.
+Le service Python doit assurer :
 
-Les documents doivent être validés avant d'être accessibles au moteur de recherche.
+- L'extraction du texte.
+- La segmentation en sections et passages.
+- La génération des embeddings.
+- L'indexation vectorielle.
+- L'indexation plein texte.
+- La recherche hybride.
+- Le classement et la diversification des résultats.
 
-### 9.2. Extraction
+Les documents originaux sont conservés.
 
-Le système extrait le texte natif des documents.
+Les formats pris en charge dans le MVP sont le PDF contenant du texte, le DOCX, le Markdown et le TXT.
+
+Le système ne réalise pas d'OCR dans le MVP : un PDF constitué d'images est refusé ou signalé comme non exploitable.
 
 Les images, illustrations et contenus sans couche textuelle exploitable ne sont pas analysés.
 
-Les états d'extraction doivent distinguer :
-- `COMPLETED` ;
-- `PARTIAL` ;
-- `FAILED` ;
-- `UNSUPPORTED`.
+Les états d'une ingestion documentaire distinguent :
 
-Une extraction partielle doit être signalée.
+- `PENDING` : ingestion demandée, pas encore commencée.
+- `PROCESSING` : traitement en cours.
+- `COMPLETED` : extraction complète.
+- `PARTIAL` : extraction partielle, qui doit être signalée à l'administrateur.
+- `FAILED` : échec du traitement.
+- `UNSUPPORTED` : format ou contenu non pris en charge.
 
-### 9.3. Indexation
+Les passages retrouvés doivent conserver leur provenance exacte : document, version, section et page lorsque disponible.
 
-L'indexation comprend :
-- extraction ;
-- normalisation ;
-- découpage structurel et sémantique ;
-- génération des embeddings ;
-- indexation textuelle ;
-- contrôles de cohérence.
+### Pertinence de la recherche
 
-La version précédemment active reste disponible jusqu'à l'activation complète de la nouvelle version.
+Une recherche documentaire est recommandée, voire nécessaire, lorsque la demande porte notamment sur :
 
-Le basculement de version doit être atomique.
+- Une technique TCC.
+- Une notion théorique.
+- Une justification méthodologique.
+- Des références ou des études.
+- Une question nécessitant une documentation spécifique.
 
-### 9.4. Recherche
+Une conversation informelle ou une simple reformulation ne nécessite pas systématiquement de recherche documentaire.
 
-Le RAG est contextuel.
+### Règles de recherche
 
-Il est recommandé ou obligatoire lorsque la demande porte notamment sur :
-- une technique TCC ;
-- une notion théorique ;
-- une justification méthodologique ;
-- des références ou études ;
-- une question nécessitant une documentation spécifique.
+- Seuls les documents approuvés et activés sont utilisables.
+- Un document désactivé ne doit plus être proposé à la recherche.
+- Une nouvelle version ne remplace l'ancienne qu'après validation complète de son indexation.
+- Une recherche insuffisante doit être signalée.
+- Les références bibliographiques ne doivent jamais être inventées.
+- Les réponses documentées doivent permettre d'identifier les documents, versions et passages utilisés.
 
-Une conversation informelle ou une simple reformulation ne nécessite pas systématiquement une recherche documentaire.
+### Divergences et connaissances générales
 
-### 9.5. Références et divergences
+Lorsque les sources divergent, le compagnon présente les différences de manière nuancée, sans fabriquer de consensus, en tenant compte :
 
-Les réponses documentées doivent permettre d'identifier les documents, versions et passages utilisés.
-
-Les références ne doivent jamais être inventées.
-
-Lorsque les sources divergent, le compagnon présente les différences de manière nuancée en tenant compte :
-- des populations étudiées ;
-- des méthodes ;
-- du niveau de preuve ;
-- des limites des documents.
+- Des populations étudiées.
+- Des méthodes.
+- Du niveau de preuve.
+- Des limites des documents.
 
 Lorsque la base ne contient pas de source pertinente, le compagnon peut utiliser ses connaissances générales, mais doit le signaler explicitement.
 
----
+## 13. Administration
 
-## 10. Gouvernance IA
+L'interface Filament doit permettre de gérer :
 
-### 10.1. Modèles
+- Les utilisateurs et leurs rôles (`ADMIN`, `USER`).
+- Les exercices et leurs versions.
+- Les catégories et tags.
+- Les parcours éditoriaux.
+- Les ressources documentaires.
+- Les documents de la base de connaissances.
+- Les modèles IA et leurs configurations.
+- Les prompts.
+- Les règles de gouvernance.
+- Les évaluations et versions de configuration.
+- Les opérations de maintenance.
 
-Plusieurs modèles peuvent être configurés selon les usages.
+Les règles critiques de sécurité ne doivent pas pouvoir être désactivées par une simple modification de configuration éditoriale.
 
-Une configuration par usage est sélectionnée explicitement.
+## 14. Gouvernance de l'intelligence artificielle
 
-Aucun remplacement automatique de modèle n'est autorisé.
+### 14.1 Modèles
 
-### 10.2. Prompts
+Les modèles sont configurables par type d'utilisation.
 
-Les prompts sont spécialisés et composables :
-- socle comportemental commun ;
-- conversation générale ;
-- accompagnement TCC ;
-- analyse du journal ;
-- exercices ;
-- bilans de progression ;
-- extraction de mémoire.
+Aucun basculement automatique vers un service externe ou un autre modèle n'est prévu en cas d'échec.
 
-Les versions sont historisées.
+Si le modèle nécessaire est indisponible, la fonctionnalité IA concernée doit signaler son indisponibilité. Les autres fonctions de l'application restent disponibles.
 
-### 10.3. Releases
+### 14.2 Prompts
 
-Une release représente une configuration cohérente de l'ensemble du système IA.
+Les prompts doivent être :
 
-Elle référence les versions exactes de ses composants.
+- Versionnés.
+- Composables.
+- Associés à un usage.
+- Évaluables.
+- Réversibles.
 
-Une release activée est immuable.
+Une modification de configuration doit produire une nouvelle version contrôlée.
 
-Toute modification crée une nouvelle release.
+### 14.3 Évaluations
 
-Le retour arrière réactive une ancienne release sans la modifier.
+Les configurations doivent être évaluées avant activation.
 
-### 10.4. Évaluations
+Les tests de sécurité critiques sont bloquants, indépendamment du score moyen obtenu sur les autres critères.
 
-Toute nouvelle configuration doit être évaluée avant activation.
+Les évaluations doivent conserver les versions du modèle, des prompts, des politiques et du jeu de tests utilisés.
 
-Les critères comprennent :
-- sécurité ;
-- confidentialité ;
-- pertinence ;
-- qualité conversationnelle ;
-- cohérence TCC ;
-- exactitude des références ;
-- qualité de la mémoire ;
-- performances.
+### 14.4 Sécurité psychologique
 
-Un échec critique de sécurité bloque l'activation indépendamment du score global.
+Le système doit identifier les situations de détresse et appliquer les protocoles d'orientation définis.
 
----
+Les signaux de risque grave ne doivent pas être traités comme une conversation TCC ordinaire.
 
-## 11. Sécurité psychologique
+Les règles critiques doivent être testables et ne pas dépendre exclusivement du modèle génératif.
 
-Le système applique une politique de sécurité graduée :
+La sécurité déterministe est implémentée dans Laravel, indépendamment de Python et d'Ollama : elle reste donc active si le service Python ou le moteur d'inférence est indisponible ou défaillant.
 
-- Niveau 0 : conversation ordinaire.
-- Niveau 1 : détresse ou souffrance émotionnelle.
-- Niveau 2 : pensées suicidaires ou d'automutilation sans danger imminent établi.
-- Niveau 3 : danger imminent, tentative ou intention précise associée à un risque immédiat.
+Une situation de danger plausible doit déclencher une orientation immédiate vers les ressources d'urgence, sans attendre une évaluation complète.
 
-Le détecteur peut combiner règles déterministes, analyse contextuelle et assistance du modèle.
+Les ressources d'urgence sont adaptées au pays défini dans les préférences de l'utilisateur, la France étant le pays par défaut.
 
-Une situation de danger plausible doit déclencher une orientation immédiate, sans attendre une évaluation complète.
+Les protocoles doivent éviter le jugement, ne pas poser de diagnostic et ne jamais prétendre contacter les secours à la place de l'utilisateur.
 
-Les protocoles doivent :
-- être adaptés au niveau de risque ;
-- éviter le jugement ;
-- ne pas poser de diagnostic ;
-- orienter vers les ressources appropriées ;
-- ne jamais prétendre contacter les secours à la place de l'utilisateur.
+Le protocole détaillé sera défini dans `10-PROTOCOLE-SECURITE.md` (à venir, phase 7).
 
----
+## 15. Service Python et communication interservices
 
-## 12. Administration et validation éditoriale
+Le service Python prend en charge les traitements techniques liés à l'IA et aux documents.
 
-L'administration permet :
-- de gérer les exercices ;
-- de versionner et valider les contenus ;
-- de gérer les parcours éditoriaux ;
-- de gérer les ressources ;
-- d'importer et valider les documents ;
-- de gérer les catégories et étiquettes ;
-- de gérer les modèles, prompts et règles IA ;
-- d'exécuter les évaluations ;
-- d'activer ou de restaurer une configuration IA.
+Il ne doit pas devenir propriétaire des données métier gérées par Laravel.
 
-L'auteur d'un contenu et son validateur doivent être distincts lorsque plusieurs personnes interviennent.
+Les échanges doivent reposer sur des contrats explicites et versionnés, décrits dans `07-CONTRATS-INTERSERVICES.md`.
 
-Un mode de validation par une seule personne est prévu pour le contexte personnel initial et doit être explicitement identifié.
+Le service Python n'est joignable que depuis le réseau Docker interne. Le navigateur ne communique jamais directement avec Python : tous les échanges passent par Laravel.
 
----
+Les modes de communication sont :
 
-## 13. Notifications
+- API synchrone pour les opérations courtes.
+- Streaming pour les générations conversationnelles.
+- Files de tâches pour les traitements longs.
 
-Les rappels sont facultatifs.
+Les requêtes doivent comporter les identifiants techniques nécessaires au suivi, à l'idempotence et à la corrélation.
+
+Les erreurs doivent être normalisées et ne pas exposer de données personnelles dans les logs.
+
+## 16. Sauvegarde, export et suppression
+
+### Sauvegarde
+
+Le système doit permettre :
+
+- Des sauvegardes de la base PostgreSQL.
+- Des sauvegardes des documents et fichiers.
+- La sauvegarde des configurations nécessaires à la restauration.
+- La vérification de leur intégrité.
+- La restauration cohérente des données.
+- Des tests périodiques de restauration, qui sont obligatoires.
+
+Les sauvegardes sont écrites sur un support externe au poste (disque externe ou équivalent). Une copie sur le même SSD ne constitue pas une sauvegarde.
+
+Les sauvegardes sont chiffrées. Leur clé de chiffrement est conservée séparément des sauvegardes.
+
+### Export
+
+L'utilisateur doit pouvoir demander un export complet de ses données, comprenant :
+
+- Les données structurées.
+- Les conversations.
+- Les mémoires.
+- Le journal et ses versions.
+- Les réponses aux exercices.
+- Les objectifs et parcours.
+- Les préférences.
+- Les fichiers personnels éventuellement associés.
+
+L'export est généré de manière asynchrone et mis à disposition par un lien protégé et temporaire.
+
+Formats initiaux : JSON, et JSON accompagné des fichiers.
+
+### Suppression
+
+La suppression doit être orchestrée entre les différents contextes.
+
+Après la confirmation demandée à l'utilisateur, la suppression est d'abord logique et immédiate : les données deviennent inaccessibles et sont exclues de tout traitement. La suppression physique, y compris celle des données dérivées, est ensuite exécutée de façon asynchrone.
+
+Elle doit inclure les données dérivées, index documentaires et mémoires associées selon les règles définies.
+
+Les sauvegardes historiques suivent une politique de rétention spécifique. Lors d'une restauration, les suppressions intervenues après la date de sauvegarde doivent être réappliquées.
+
+Pour cela, un registre des suppressions (*deletion ledger*) est tenu selon les principes suivants :
+
+- Fichier JSONL en ajout seul (append-only), stocké hors de la base restaurée.
+- Écriture sérialisée : une seule écriture à la fois.
+- Entrée durable (écrite et synchronisée sur disque) avant que le système n'accuse réception de la suppression.
+- Point de contrôle (checkpoint) enregistré avant la capture d'une sauvegarde.
+- Rejeu idempotent après restauration : réappliquer une entrée déjà appliquée n'a aucun effet supplémentaire.
+
+## 17. Notifications
+
+Les rappels et notifications sont facultatifs et soumis au consentement explicite de l'utilisateur.
 
 L'utilisateur doit pouvoir :
-- activer ou désactiver les notifications ;
-- choisir les catégories ;
-- définir une fréquence ;
-- configurer des périodes de silence.
+
+- Activer ou désactiver les notifications.
+- Choisir les catégories.
+- Définir une fréquence.
+- Configurer des périodes de silence.
 
 Aucun rappel ne doit culpabiliser l'utilisateur pour une absence d'activité.
 
 Les notifications ne doivent pas devenir une condition d'utilisation de l'application.
 
----
+## 18. Exigences non fonctionnelles
 
-## 14. Export, suppression et sauvegardes
+### Sécurité
 
-### 14.1. Export
+- Authentification obligatoire.
+- Autorisation côté serveur.
+- Protection contre les accès interutilisateurs.
+- Secrets exclus du dépôt Git.
+- Logs sans contenu personnel.
+- Chiffrement des volumes et sauvegardes.
+- Contrats interservices contrôlés.
 
-L'utilisateur peut demander un export complet comprenant :
-- données structurées ;
-- conversations ;
-- mémoires ;
-- journal et versions ;
-- réponses aux exercices ;
-- objectifs et parcours ;
-- préférences ;
-- fichiers personnels éventuellement associés.
+### Fiabilité
 
-L'export est généré de manière asynchrone et protégé par un lien temporaire.
+- Opérations idempotentes lorsque nécessaire.
+- Gestion explicite des erreurs.
+- Reprises contrôlées des tâches asynchrones.
+- Transactions locales courtes.
+- Pas de transaction SQL maintenue pendant un appel HTTP ou une génération IA.
 
-Formats initiaux : JSON et JSON accompagné des fichiers.
+### Maintenabilité
 
-### 14.2. Suppression
+- Architecture modulaire.
+- Séparation des responsabilités.
+- Tests unitaires et d'intégration.
+- Contrats documentés.
+- Migrations versionnées.
+- Versionnement des configurations et contenus.
 
-La suppression du compte doit :
-1. demander une confirmation explicite ;
-2. bloquer les nouvelles opérations ;
-3. supprimer les données dans chaque contexte ;
-4. supprimer les données dérivées et indexations ;
-5. vérifier la suppression ;
-6. produire une confirmation.
+### Performance
 
-Les sauvegardes existantes ne sont pas réécrites individuellement.
+Les traitements doivent être adaptés à la configuration matérielle cible.
 
-Les suppressions doivent toutefois être réappliquées lors d'une restauration si elles sont intervenues après la date de sauvegarde.
+Les opérations longues doivent être asynchrones et leur état consultable.
 
-### 14.3. Sauvegardes
+Les chargements de données doivent être limités au contexte utile, sans charger systématiquement tout l'historique ou toute la mémoire.
 
-Les sauvegardes doivent couvrir :
-- PostgreSQL ;
-- documents et fichiers ;
-- configurations nécessaires à la restauration.
+### Accessibilité
 
-Elles sont chiffrées et leur clé est conservée séparément.
+Les parcours essentiels doivent respecter les objectifs d'accessibilité WCAG 2.2 AA.
 
-Des tests périodiques de restauration sont obligatoires.
+L'interface doit rester utilisable sur ordinateur, tablette et mobile.
 
----
+### Disponibilité hors ligne
 
-## 15. Critères transversaux de validation
+Les fonctionnalités ne nécessitant pas l'IA doivent rester utilisables sans accès Internet.
+
+L'indisponibilité d'Ollama ou du service Python ne doit pas rendre l'ensemble de l'application inutilisable.
+
+## 19. Critères d'acceptation globaux
+
+Le MVP doit satisfaire les conditions suivantes :
+
+1. Un utilisateur authentifié peut accéder uniquement à ses propres données.
+2. Les conversations sont conservées et leur historique est consultable.
+3. Les générations interrompues sont identifiées comme telles.
+4. Les régénérations conservent les tentatives précédentes.
+5. La mémoire distingue les informations déclarées des hypothèses.
+6. Les exercices sont versionnés et leurs sessions conservent la version utilisée.
+7. Les réponses d'exercices sont sauvegardées et récupérables.
+8. Le journal applique les préférences de confidentialité définies.
+9. Les parcours et objectifs peuvent être gérés indépendamment.
+10. Les bilans sont déclenchés à la demande et validés par l'utilisateur.
+11. Les réponses documentaires conservent leur provenance.
+12. Les règles de sécurité sont appliquées même en cas de défaillance du modèle.
+13. Les données peuvent être sauvegardées, exportées et supprimées.
+14. Les fonctionnalités non IA restent accessibles sans moteur IA.
+15. Les échanges Laravel/Python respectent les contrats et les frontières de responsabilité.
+
+## 20. Critère de livraison du MVP
+
+### 20.1 Définition de terminé
 
 Une fonctionnalité ne peut être considérée comme terminée que si les points applicables suivants sont vérifiés :
 
@@ -611,9 +654,9 @@ Une fonctionnalité ne peut être considérée comme terminée que si les points
 - Les parcours essentiels respectent les objectifs d'accessibilité WCAG 2.2 AA.
 - Les fonctionnalités non IA restent disponibles lorsque le moteur IA est arrêté.
 
-## 16. Critère de livraison du MVP
+### 20.2 Parcours essentiels
 
-Le MVP est fonctionnel lorsque l'ensemble des parcours essentiels est utilisable de bout en bout :
+Le MVP est livrable lorsque l'ensemble des parcours essentiels est utilisable de bout en bout :
 
 1. Connexion à l'application.
 2. Consultation du catalogue.
@@ -629,3 +672,13 @@ Le MVP est fonctionnel lorsque l'ensemble des parcours essentiels est utilisable
 12. Sauvegarde et restauration vérifiées.
 
 La livraison ne doit pas être considérée comme acquise sur la seule base d'une interface visuellement fonctionnelle. Les règles métier, la sécurité, les tests et la cohérence des données font partie intégrante du produit.
+
+---
+
+**Statut :** cahier des charges — version de travail à valider.
+
+**Dépendances :** `01-VISION-PRODUIT.md` et `07-CONTRATS-INTERSERVICES.md`.
+
+**Documents liés :** `03-ARCHITECTURE-DDD.md`, `04-BOUNDED-CONTEXTS.md`, `05-CATALOGUE-CAS-UTILISATION.md`, `06-DICTIONNAIRE-DONNEES-POSTGRESQL.md` et `10-PROTOCOLE-SECURITE.md` (à venir, phase 7).
+
+**Changements v2 :** machine de référence 32 Go (i5-8350U, SSD 256 Go), priorité des conversations et préemption des traitements de fond, rôles `ADMIN` et `USER`, préférences générales, verrouillage côté serveur, titre automatique sans appel au modèle, distinction entre mémoire saisie et mémoire extraite, validation éditoriale, archivage et restauration, bilans révisables, modes de récupération documentaire, formats et états d'ingestion, pertinence de la recherche, divergences et connaissances générales, règles d'urgence, sécurité déterministe dans Laravel, renvoi aux contrats interservices, sauvegardes externes chiffrées, export JSON, suppression logique puis physique, registre des suppressions, notifications, accessibilité et critère de livraison du MVP (Phase 0).
